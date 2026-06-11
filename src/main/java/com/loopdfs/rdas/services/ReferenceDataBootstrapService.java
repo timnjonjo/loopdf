@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.*;
 
 /**
  * Loads all reference data from SOAP on startup and refreshes nightly.
@@ -100,51 +100,57 @@ public class ReferenceDataBootstrapService {
     private void refreshCountries() {
         log.info("Fetching country-continent mapping from SOAP...");
         Map<String, String> isoToContinentCode = soapGateway.fetchCountriesByContinent();
+        log.info("SOAP returned {} country entries", isoToContinentCode.size());
+
         if (isoToContinentCode.isEmpty()) {
             log.error("fetchCountriesByContinent returned empty map — skipping country refresh");
             return;
         }
-        List<Country> assembled = new ArrayList<>();
 
-        for (Map.Entry<String, String> entry : isoToContinentCode.entrySet()) {
-            String isoCode       = entry.getKey();
-            String continentCode = entry.getValue();
-            log.info("Fetching country: {}", isoCode);
-            try {
-                String name         = soapGateway.fetchCountryName(isoCode);
-                String capitalCity  = soapGateway.fetchCapitalCity(isoCode);
-                String currencyIso  = soapGateway.fetchCountryCurrencyIso(isoCode);
-                String currencyName = currencyIso.isBlank()
-                        ? "" : soapGateway.fetchCurrencyName(currencyIso);
-                String phoneCode    = soapGateway.fetchPhoneCode(isoCode);
-                String flagUrl      = soapGateway.fetchFlagUrl(isoCode);
+        int threadCount =10;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount, r -> {
+            Thread t = new Thread(r, "bootstrap-worker");
+            t.setDaemon(true);
+            return t;
+        });
+        List<Country> assembled = new CopyOnWriteArrayList<>();
+        // Build one task per country
+        List<CompletableFuture<Void>> futures = isoToContinentCode.entrySet()
+                .stream()
+                .map(entry -> CompletableFuture.runAsync(
+                        () -> fetchAndAssembleCountry(
+                                entry.getKey(),
+                                entry.getValue(),
+                                assembled),
+                        executor))
+                .toList();
 
-                assembled.add(Country.builder()
-                        .isoCode(isoCode)
-                        .name(name)
-                        .continentCode(continentCode)
-                        .capitalCity(capitalCity)
-                        .currencyIsoCode(currencyIso)
-                        .currencyName(currencyName)
-                        .internationalPhoneCode(phoneCode)
-                        .languageIsoCode("")        // SOAP has no direct country→language op
-                        .languageName("")
-                        .flagUrl(flagUrl)
-                        .build());
-
-            } catch (Exception ex) {
-                log.warn("Skipping country {} due to partial SOAP error: {}", isoCode, ex.getMessage());
-            }
+        // Wait for all tasks, with a generous timeout
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .get(10, TimeUnit.MINUTES);
+        } catch (TimeoutException ex) {
+            log.error("Country bootstrap timed out after 10 minutes. Assembled {} so far.", assembled.size());
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            log.error("Country bootstrap interrupted", ex);
+        } catch (ExecutionException ex) {
+            log.error("Country bootstrap execution error", ex.getCause());
+        } finally {
+            executor.shutdown();
         }
-        log.info("Assembled {} countries, storing...", assembled.size());
-        store.replaceCountries(assembled);
+
+        log.info("Assembled {} / {} countries", assembled.size(), isoToContinentCode.size());
+
+        if (!assembled.isEmpty()) {
+            store.replaceCountries(assembled);
+        }
     }
 
     private void fetchAndAssembleCountry(String isoCode, String continentCode,
                                          List<Country> assembled) {
         try {
             log.debug("Fetching details for country: {}", isoCode);
-
             String name         = callWithRateLimit(() -> soapGateway.fetchCountryName(isoCode));
             String capitalCity  = callWithRateLimit(() -> soapGateway.fetchCapitalCity(isoCode));
             String currencyIso  = callWithRateLimit(() -> soapGateway.fetchCountryCurrencyIso(isoCode));
@@ -170,8 +176,6 @@ public class ReferenceDataBootstrapService {
             log.warn("Skipping country {} due to error: {}", isoCode, ex.getMessage());
         }
     }
-
-
 
     private String callWithRateLimit(CheckedSupplier<String> soapCall) {
         try {
