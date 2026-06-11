@@ -104,7 +104,7 @@ http://webservices.oorsprong.org/websamples.countryinfo/CountryInfoService.wso?W
 | Cache | Caffeine (in-process) |
 | Resilience | Resilience4j (CircuitBreaker, Retry) |
 | API docs | SpringDoc OpenAPI 2 (Swagger UI) |
-| Observability | Spring Actuator + Prometheus |
+| Observability | Spring Actuator|
 | Container | Docker |
 | Orchestration | Kubernetes |
 
@@ -121,12 +121,12 @@ rdas/
 │   │   │   ├── config/
 │   │   │   │   ├── CacheConfig.java          # Caffeine cache beans with per-type TTLs
 │   │   │   │   └── SoapConfig.java           # JAX-WS port with timeout config
-│   │   │   ├── controller/
+│   │   │   ├── controllers/
 │   │   │   │   ├── CountryController.java    # GET /api/v1/countries
 │   │   │   │   ├── ContinentController.java  # GET /api/v1/continents
 │   │   │   │   ├── CurrencyController.java   # GET /api/v1/currencies
 │   │   │   │   └── LanguageController.java   # GET /api/v1/languages
-│   │   │   ├── service/
+│   │   │   ├── services/
 │   │   │   │   ├── CountryService.java              # filter / sort / paginate
 │   │   │   │   ├── ReferenceDataBootstrapService.java # startup + scheduled refresh
 │   │   │   │   └── ReferenceDataStore.java          # in-memory ConcurrentHashMap store
@@ -138,12 +138,12 @@ rdas/
 │   │   │   │   ├── Continent.java
 │   │   │   │   ├── Currency.java
 │   │   │   │   └── Language.java
-│   │   │   ├── dto/
+│   │   │   ├── dtos/
 │   │   │   │   ├── CountryResponse.java
 │   │   │   │   ├── CountryDetailResponse.java
 │   │   │   │   ├── PagedResponse.java
 │   │   │   │   └── ErrorResponse.java
-│   │   │   ├── exception/
+│   │   │   ├── exceptions/
 │   │   │   │   ├── GlobalExceptionHandler.java
 │   │   │   │   ├── ResourceNotFoundException.java
 │   │   │   │   └── SoapGatewayException.java
@@ -157,9 +157,9 @@ rdas/
 │   │           └── CountryInfoService.wsdl   # local WSDL copy for offline builds
 │   └── test/
 │       └── java/com/loopdfs/rdas/
-│           └── service/
+│           └── services/
 │               └── CountryServiceTest.java
-└── k8s/
+└── deployment-files/
     ├── namespace.yaml
     ├── configmap.yaml
     ├── deployment.yaml
@@ -644,14 +644,11 @@ Since all reads are served from in-memory after bootstrap, a single pod can hand
 - 3–5 RDAS pods behind a load balancer (already configured via HPA)
 - Replace Caffeine with a shared Redis cluster so all pods share one warm store
 - Bootstrap becomes a leader-elected CronJob (ShedLock) — only one pod calls SOAP
-- Add CDN caching (Cloudflare / CloudFront) at the edge for `/countries/{isoCode}` — these are fully cacheable
 - Prometheus + Grafana dashboards with autoscaling alerts
 
 ### Q3 — Given another week
 
 - **Persistent store** — persist bootstrapped data to PostgreSQL so restarts are instant with no SOAP dependency
 - **Admin refresh endpoint** — `POST /admin/cache/refresh` secured by API key for on-demand refresh
-- **Change detection** — hash the SOAP response; only evict and repopulate cache if data actually changed
-- **Language enrichment** — bundle an ISO 3166 → ISO 639 mapping table to populate `languageIsoCode` / `languageName` per country (SOAP has no direct operation for this)
 - **OpenTelemetry** — distributed tracing (OTLP → Jaeger) for SOAP latency visibility across bootstrap and refresh cycles
 - **Audit log** — persist every API call (IP, path, params, timestamp, response time) to a database table for compliance reporting
