@@ -488,24 +488,24 @@ docker build -t your-registry/rdas:1.0.0 .
 docker push your-registry/rdas:1.0.0
 ```
 
-Update the `image` field in `k8s/deployment.yaml` to match your registry path.
+Update the `image` field in `deplyment-files/deployment.yaml` to match your registry path.
 
 ### 2. Deploy
 
 ```bash
 # Apply all manifests in order
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/configmap.yaml
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
-kubectl apply -f k8s/ingress.yaml
-kubectl apply -f k8s/hpa.yaml
+kubectl apply -f deplyment-files/namespace.yaml
+kubectl apply -f deplyment-files/configmap.yaml
+kubectl apply -f deplyment-files/deployment.yaml
+kubectl apply -f deplyment-files/service.yaml
+kubectl apply -f deplyment-files/ingress.yaml
+kubectl apply -f deplyment-files/hpa.yaml
 ```
 
 Or apply the whole directory at once:
 
 ```bash
-kubectl apply -f k8s/
+kubectl apply -f deplyment-files/
 ```
 
 ### 3. Verify the rollout
@@ -604,7 +604,7 @@ RDAS holds all reference data in-memory (~250 countries). Each pod is allocated 
 # Check current memory
 kubectl top pods -n rdas
 
-# Increase limits in k8s/deployment.yaml
+# Increase limits in deplyment-files/deployment.yaml
 resources:
   limits:
     memory: "2Gi"
