@@ -107,7 +107,7 @@ public class ReferenceDataBootstrapService {
             return;
         }
 
-        int threadCount =10;
+        int threadCount =5;
         ExecutorService executor = Executors.newFixedThreadPool(threadCount, r -> {
             Thread t = new Thread(r, "bootstrap-worker");
             t.setDaemon(true);
